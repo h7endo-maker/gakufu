@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="がくふ">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f3f1ee">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>がくふ プレーヤー</title>
+<style>
+/* VOICE: やさしく静か。子どもが押せる大きなボタン、親が読める落ち着いた文字
+   IDEA: ピアノの譜面台 — 白い楽譜が主役、下に鍵盤のような操作台
+   PICTURE: 楽譜そのもの。鳴っている音符が右手=赤・左手=青に光る
+   COLOUR and TYPE: 白い紙と黒鍵の墨色、右手の赤・左手の青、くりかえし範囲は淡い黄。iPad内蔵のヒラギノ丸ゴ
+   LAYOUT: 上に曲名と開くボタン、中央に楽譜、下に固定の操作台（狭い画面では折り返し） */
+:root{color-scheme:light dark;--bg:light-dark(#f3f1ee,#17161b);--ink:light-dark(#1d1b22,#eceaf0);--sub:light-dark(#6b6873,#a7a3b0);--dock:light-dark(#1d1b22,#0d0c10);--dockink:#f5f4f7;--line:light-dark(#dcd8d2,#2c2a32);--r:#e2463a;--l:#2f6fd6;--loop:rgba(255,196,40,.28)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Hiragino Maru Gothic ProN","Zen Maru Gothic","Yu Gothic UI",system-ui,sans-serif;touch-action:manipulation;-webkit-tap-highlight-color:transparent;overflow-x:clip;padding-bottom:calc(190px + env(safe-area-inset-bottom))}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:calc(16px + env(safe-area-inset-top)) max(4vw,14px,env(safe-area-inset-right)) 10px max(4vw,14px,env(safe-area-inset-left))}
+.dock,header .btn{-webkit-user-select:none;user-select:none}
+h1{margin:0;font-size:clamp(22px,3.4vw,32px);line-height:1.1;font-weight:700;flex:1 1 220px;text-wrap:balance}
+h1 small{display:block;font-size:13px;color:var(--sub);font-weight:500;margin-top:4px}
+button,select{font:inherit;color:inherit}
+.btn{min-height:44px;padding:0 16px;border-radius:12px;border:1.5px solid var(--line);background:light-dark(#fff,#24222a);cursor:pointer;font-weight:700}
+.btn:focus-visible,.seg button:focus-visible,.round:focus-visible{outline:3px solid #ffc428;outline-offset:2px}
+.sheetwrap{margin:0 max(2vw,8px);background:#fff;border-radius:16px;box-shadow:0 1px 0 var(--line),0 8px 24px rgba(0,0,0,.07);position:relative;overflow:hidden;min-height:300px}
+#score{position:relative;z-index:1}
+#overlay{position:absolute;inset:0;pointer-events:none;z-index:0}
+#overlay div{position:absolute;background:var(--loop);border-radius:6px}
+#overlay .start{background:none;border-left:4px solid #ffb400;border-radius:0}
+.hint{color:var(--sub);font-size:14px;padding:8px max(4vw,14px) 0}
+.hl-r path,.hl-r rect{fill:var(--r)!important;stroke:var(--r)!important}
+.hl-l path,.hl-l rect{fill:var(--l)!important;stroke:var(--l)!important}
+#status{position:absolute;inset:0;display:grid;place-items:center;color:#6b6873;font-size:15px;background:#fff}
+#status[hidden]{display:none}
+.dock{position:fixed;left:0;right:0;bottom:0;background:var(--dock);color:var(--dockink);padding:12px max(3vw,12px) calc(12px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:center;border-top:6px solid #000;z-index:5}
+.round{width:72px;height:72px;border-radius:50%;border:0;background:#fff;color:#1d1b22;display:grid;place-items:center;cursor:pointer;flex:none}
+.round svg{width:30px;height:30px}
+.round.on{background:#ffc428}
+.grp{display:flex;flex-direction:column;gap:6px}
+.lab{font-size:13px;color:#b9b6c2}
+.seg{display:flex;background:#2e2c35;border-radius:12px;padding:3px}
+.seg button{min-height:44px;padding:0 14px;border:0;border-radius:10px;background:none;color:#f5f4f7;cursor:pointer;font-weight:700;white-space:nowrap}
+.seg button[aria-pressed=true]{background:#fff;color:#1d1b22}
+.seg button[data-h=r][aria-pressed=true]{background:var(--r);color:#fff}
+.seg button[data-h=l][aria-pressed=true]{background:var(--l);color:#fff}
+.tempo{display:flex;align-items:center;gap:8px}
+.tempo output{font-size:26px;font-weight:700;width:3.2ch;text-align:right;font-variant-numeric:tabular-nums}
+.sm{width:44px;height:44px;border-radius:12px;border:0;background:#2e2c35;color:#fff;font-size:22px;cursor:pointer;flex:none}
+input[type=range]{width:min(220px,40vw);accent-color:#ffc428;height:44px}
+.loopbox{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.loopbox b{font-size:20px;font-variant-numeric:tabular-nums;min-width:2ch;text-align:center}
+.lib{padding:18px max(4vw,14px) 0}
+.lib h2{font-size:18px;margin:0 0 8px}
+.lib ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.lib li{display:flex;align-items:center;background:light-dark(#fff,#24222a);border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+.lib li button{border:0;background:none;min-height:44px;padding:0 14px;cursor:pointer}
+.lib li .del{color:var(--sub);padding:0 12px}
+.lib li.cur{border-color:#ffb400}
+.msg{margin:8px max(2vw,8px);padding:12px 16px;border-radius:12px;background:light-dark(#fff4d1,#3a3220);border:1.5px solid #ffc428;font-size:15px}
+.msg .btn{min-height:36px;margin-left:6px;padding:0 12px}
+.note{font-size:13px;color:var(--sub);margin:8px 0 0}
+@media(max-width:600px){.round{width:60px;height:60px}.dock{gap:8px 10px;padding-top:10px}.dock .lab{display:none}.loopbox .lab{display:inline;font-size:12px}input[type=range]{width:30vw}.seg button{padding:0 11px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">がくふ プレーヤー<small id="sub">楽譜データ（MusicXML / .mxl）を開くと、ここで音が鳴ります。複数ファイルをまとめて選ぶと、つなげて表示します</small></h1>
+  <button class="btn" id="smaller" aria-label="楽譜を小さく">ちいさく</button>
+  <button class="btn" id="bigger" aria-label="楽譜を大きく">おおきく</button>
+  <label class="btn" style="display:inline-flex;align-items:center;background:#ffc428;border-color:#ffc428;color:#1d1b22">がくふを ひらく<input type="file" id="file" multiple hidden></label>
+</header>
+<p class="hint" id="hint">楽譜の小節をタップすると、そこから再生します。「くりかえし」をオンにすると、タップで範囲をえらべます。</p>
+<div id="msg" class="msg" role="alert" hidden></div>
+<div class="sheetwrap"><div id="score"></div><div id="overlay"></div><div id="status">よみこみ中…</div></div>
+<section class="lib">
+  <h2>ひらいた がくふ</h2>
+  <ul id="libList"></ul>
+  <p class="note">開いた楽譜はこのiPadの中に保存されます（他の端末とは共有されません）。最初の「きらきら星」は動作確認用のサンプルです。</p>
+</section>
+
+<div class="dock" role="toolbar" aria-label="さいせいの そうさ">
+  <button class="round" id="play" aria-label="さいせい"><svg viewBox="0 0 24 24" id="playIcon"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg></button>
+  <div class="grp"><span class="lab">どの手を ならす？</span>
+    <div class="seg" id="hands"><button data-h="b" aria-pressed="true">りょうて</button><button data-h="r" aria-pressed="false">みぎて</button><button data-h="l" aria-pressed="false">ひだりて</button></div></div>
+  <div class="grp"><span class="lab">はやさ（♩＝1分間の拍）</span>
+    <div class="tempo"><button class="sm" id="tDown" aria-label="おそく">−</button><input type="range" id="tempo" min="30" max="180" value="80" aria-label="はやさ"><button class="sm" id="tUp" aria-label="はやく">＋</button><output id="tOut">80</output></div></div>
+  <div class="grp"><span class="lab">くりかえし</span>
+    <div class="loopbox"><div class="seg"><button id="loopBtn" aria-pressed="false">オフ</button></div>
+      <button class="sm" id="sDown" aria-label="はじめを前へ">−</button><b id="sOut">1</b><button class="sm" id="sUp" aria-label="はじめを後ろへ">＋</button>
+      <span>〜</span>
+      <button class="sm" id="eDown" aria-label="おわりを前へ">−</button><b id="eOut">1</b><button class="sm" id="eUp" aria-label="おわりを後ろへ">＋</button><span class="lab">小節</span></div></div>
+  <div class="grp"><span class="lab">さきに カウント</span><div class="seg"><button id="countBtn" aria-pressed="true">あり</button></div></div>
+</div>
+
+<script src="lib/jszip.min.js"></script>
+<script src="lib/opensheetmusicdisplay.min.js"></script>
+<script>
+const SAMPLE = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE score-partwise PUBLIC \"-//Recordare//DTD MusicXML 3.1 Partwise//EN\" \"http://www.musicxml.org/dtds/partwise.dtd\">\n<score-partwise version=\"3.1\"><work><work-title>\u304d\u3089\u304d\u3089\u661f\uff08\u30c6\u30b9\u30c8\u7528\uff09<\/work-title><\/work><identification><creator type=\"composer\">\u30d5\u30e9\u30f3\u30b9\u6c11\u8b21<\/creator><\/identification>\n<part-list><score-part id=\"P1\"><part-name>Piano<\/part-name><\/score-part><\/part-list><part id=\"P1\">\n<measure number=\"1\">\n<attributes><divisions>2<\/divisions><key><fifths>0<\/fifths><\/key><time><beats>4<\/beats><beat-type>4<\/beat-type><\/time><staves>2<\/staves><clef number=\"1\"><sign>G<\/sign><line>2<\/line><\/clef><clef number=\"2\"><sign>F<\/sign><line>4<\/line><\/clef><\/attributes>\n<direction placement=\"above\"><direction-type><words>\u3086\u3063\u305f\u308a\u3068<\/words><\/direction-type><sound tempo=\"90\"/><\/direction>\n<note><pitch><step>C<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>C<\/step><octave>4<\/octave><\/pitch><duration>8<\/duration><voice>5<\/voice><type>whole<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"2\">\n<note><pitch><step>A<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>A<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>4<\/duration><voice>1<\/voice><type>half<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>F<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>4<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"3\">\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>G<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>4<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"4\">\n<note><pitch><step>D<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>D<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>5<\/octave><\/pitch><duration>4<\/duration><voice>1<\/voice><type>half<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>G<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"5\">\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>E<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"6\">\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>D<\/step><octave>5<\/octave><\/pitch><duration>4<\/duration><voice>1<\/voice><type>half<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>C<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"7\">\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>E<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"8\">\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>D<\/step><octave>5<\/octave><\/pitch><duration>4<\/duration><voice>1<\/voice><type>half<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>C<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"9\">\n<note><pitch><step>C<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>C<\/step><octave>4<\/octave><\/pitch><duration>8<\/duration><voice>5<\/voice><type>whole<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"10\">\n<note><pitch><step>A<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>A<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>G<\/step><octave>5<\/octave><\/pitch><duration>4<\/duration><voice>1<\/voice><type>half<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>F<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>4<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<\/measure>\n<measure number=\"11\">\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>F<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>E<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>G<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><voice>5<\/voice><type>half<\/type><staff>2<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>3<\/octave><\/pitch><duration>4<\/duration><tie type=\"start\"/><voice>5<\/voice><type>half<\/type><staff>2<\/staff><notations><tied type=\"start\"/><\/notations><\/note>\n<\/measure>\n<measure number=\"12\">\n<note><pitch><step>D<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>D<\/step><octave>5<\/octave><\/pitch><duration>2<\/duration><voice>1<\/voice><type>quarter<\/type><staff>1<\/staff><\/note>\n<note><pitch><step>C<\/step><octave>5<\/octave><\/pitch><duration>4<\/duration><voice>1<\/voice><type>half<\/type><staff>1<\/staff><\/note>\n<backup><duration>8<\/duration><\/backup>\n<note><pitch><step>C<\/step><octave>3<\/octave><\/pitch><duration>8<\/duration><tie type=\"stop\"/><voice>5<\/voice><type>whole<\/type><staff>2<\/staff><notations><tied type=\"stop\"/><\/notations><\/note>\n<barline location=\"right\"><bar-style>light-heavy<\/bar-style><\/barline>\n<\/measure>\n<\/part><\/score-partwise>";
+{
+const $ = id => document.getElementById(id);
+const st = { osmd:null, events:[], measures:[], nMeasures:1, hand:'b', bpm:80, loop:false, s:0, e:0, tapNext:'s', count:true, playing:false, zoom:1, curId:null };
+let ctx=null, master=null, timer=null, raf=0, queue=[], lit=new Set(), tapCount=0;
+
+/* ---------- audio ---------- */
+function audio(){
+  if(ctx) return ctx;
+  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+  ctx = new (window.AudioContext||window.webkitAudioContext)();
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value=-18; comp.ratio.value=4;
+  master = ctx.createGain(); master.gain.value=0.5; master.connect(comp); comp.connect(ctx.destination);
+  return ctx;
+}
+function tone(midi, when, dur, vel){
+  const f = 440*Math.pow(2,(midi-69)/12);
+  const g = ctx.createGain(), lp = ctx.createBiquadFilter();
+  lp.type='lowpass'; lp.frequency.value=Math.min(9000, f*6+800);
+  const peak = 0.22*vel, decay = Math.max(0.6, 3.2 - (midi-48)*0.04);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(peak, when+0.006);
+  g.gain.setTargetAtTime(peak*0.25, when+0.006, decay/4);
+  const end = when+dur;
+  g.gain.setTargetAtTime(0.0001, end, 0.05);
+  [[1,'triangle',1],[2,'sine',0.35],[3,'sine',0.12]].forEach(([h,type,a])=>{
+    const o=ctx.createOscillator(), og=ctx.createGain();
+    o.type=type; o.frequency.value=f*h; og.gain.value=a;
+    o.connect(og); og.connect(lp); o.start(when); o.stop(end+0.4);
+  });
+  lp.connect(g); g.connect(master);
+}
+function click(when, strong){
+  const o=ctx.createOscillator(), g=ctx.createGain();
+  o.frequency.value = strong?1600:1100; g.gain.setValueAtTime(0.25,when); g.gain.exponentialRampToValueAtTime(0.0001,when+0.06);
+  o.connect(g); g.connect(master); o.start(when); o.stop(when+0.08);
+}
+
+/* ---------- score ---------- */
+function extract(osmd){
+  const it = osmd.Sheet.MusicPartManager.getIterator(); const ev=[]; let guard=0;
+  while(!it.EndReached && guard++<200000){
+    const t = it.currentTimeStamp.RealValue, m = it.CurrentMeasureIndex;
+    for(const ve of it.CurrentVoiceEntries){
+      if(ve.IsGrace) continue;
+      for(const n of ve.Notes){
+        if(n.isRest() || !n.Pitch) continue;
+        const staff = n.ParentStaffEntry.ParentStaff.idInMusicSheet;
+        let len = n.Length.RealValue, tied=[];
+        if(n.NoteTie){ if(n.NoteTie.StartNote!==n) continue; tied=n.NoteTie.Notes; len=tied.reduce((a,x)=>a+x.Length.RealValue,0); }
+        ev.push({ t, len, midi:n.Pitch.getHalfTone()+12, hand: staff===0?'r':'l', m, notes: tied.length?tied:[n] });
+      }
+    }
+    it.moveToNext();
+  }
+  return ev.sort((a,b)=>a.t-b.t);
+}
+function svgOf(note){ try{ const g=st.osmd.EngravingRules.GNote(note); return g && g.getSVGGElement ? g.getSVGGElement() : null; }catch(e){ return null; } }
+
+async function loadScore(xml, name, id){
+  stop();
+  $('status').hidden=false; $('status').textContent='よみこみ中…';
+  try{
+    if(!st.osmd){
+      st.osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay($('score'), { autoResize:false, backend:'svg', drawTitle:false, drawSubtitle:false, drawComposer:false, drawLyricist:false, drawCredits:false, drawPartNames:false, followCursor:false, disableCursor:true });
+    }
+    await st.osmd.load(xml);
+    st.osmd.zoom = st.zoom; st.osmd.render();
+    st.events = extract(st.osmd);
+    const sm = st.osmd.Sheet.SourceMeasures;
+    st.measures = sm.map(m=>({ t:m.AbsoluteTimestamp.RealValue, d:m.Duration.RealValue }));
+    st.nMeasures = sm.length;
+    const title = (st.osmd.Sheet.TitleString||'').trim() || name || 'がくふ';
+    $('title').firstChild.nodeValue = title;
+    $('sub').textContent = `${st.nMeasures} 小節・音の数 ${st.events.length}`;
+    const tempo = st.osmd.Sheet.HasBPMInfo ? Math.round(st.osmd.Sheet.DefaultStartTempoInBpm) : 80;
+    const rec = id ? await dbGet(id) : null;
+    setBpm(rec && rec.bpm ? rec.bpm : tempo);
+    st.s=0; st.e=Math.min(1, st.nMeasures-1); st.tapNext='s'; st.curId=id||null;
+    $('status').hidden=true; updLoop(); renderLib(); return true;
+  }catch(err){
+    console.error(err);
+    showMsg(`「${name||'この楽譜'}」は開けませんでした。楽譜データが壊れているか、対応していない形式です。${id?'一覧の × を2回タップすると消せます。':''}`);
+    if(xml!==SAMPLE){ await loadScore(SAMPLE,'きらきら星'); }
+    return false;
+  }
+}
+function rerender(){ if(!st.osmd||!st.osmd.Sheet) return; clearLit(); st.osmd.zoom=st.zoom; st.osmd.render(); drawOverlay(); }
+
+/* measure boxes in px, relative to #score */
+function measureBoxes(){
+  const gs = st.osmd && st.osmd.GraphicSheet; if(!gs) return [];
+  const u = 10*st.osmd.zoom, out=[];
+  gs.MeasureList.forEach((row,i)=>{
+    const ms = row.filter(Boolean); if(!ms.length) return;
+    const a = ms[0].PositionAndShape, b = ms[ms.length-1].PositionAndShape;
+    const x = a.AbsolutePosition.x + a.BorderLeft, w = a.BorderRight - a.BorderLeft;
+    const y1 = a.AbsolutePosition.y - 1.5, y2 = b.AbsolutePosition.y + 5.5;
+    out[i] = { x:x*u, y:y1*u, w:w*u, h:(y2-y1)*u };
+  });
+  return out;
+}
+function drawOverlay(){
+  const ov=$('overlay'); ov.innerHTML='';
+  const bx=measureBoxes(); if(!bx.length) return;
+  const svg=$('score').querySelector('svg'); const off = svg ? svg.getBoundingClientRect().left - $('score').getBoundingClientRect().left : 0;
+  if(st.loop){
+    for(let i=st.s;i<=st.e;i++){ const b=bx[i]; if(!b) continue;
+      const d=document.createElement('div'); Object.assign(d.style,{left:off+b.x+'px',top:b.y+'px',width:b.w+'px',height:b.h+'px'}); ov.appendChild(d); }
+  }else if(bx[st.s] && st.s>0){
+    const b=bx[st.s], d=document.createElement('div'); d.className='start';
+    Object.assign(d.style,{left:off+b.x-2+'px',top:b.y+'px',width:'4px',height:b.h+'px'}); ov.appendChild(d);
+  }
+}
+$('score').addEventListener('click', ev=>{
+  const bx=measureBoxes(); if(!bx.length) return;
+  const svg=$('score').querySelector('svg'); const r=(svg||$('score')).getBoundingClientRect();
+  const x=ev.clientX-r.left, y=ev.clientY-r.top;
+  const i=bx.findIndex(b=>b && x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h);
+  if(i<0) return;
+  const was=st.playing; if(was) stop();
+  if(st.loop){
+    if(st.tapNext==='s'){ st.s=i; st.e=i; st.tapNext='e'; }
+    else { if(i<st.s){ st.e=st.s; st.s=i; } else st.e=i; st.tapNext='s'; }
+  }else{ st.s=i; }
+  updLoop();
+});
+
+/* ---------- playback ---------- */
+function range(){
+  const a = st.measures[st.s], endM = st.loop ? st.e : st.nMeasures-1, b = st.measures[endM];
+  return { t0:a.t, t1:b.t+b.d };
+}
+function play(){
+  if(!st.events.length) return;
+  audio(); if(ctx.state==='suspended') ctx.resume();
+  const { t0, t1 } = range();
+  const spw = 240/st.bpm;            // seconds per whole note
+  const list = st.events.filter(e=>e.t>=t0-1e-9 && e.t<t1-1e-9 && (st.hand==='b'||e.hand===st.hand));
+  let start = ctx.currentTime + 0.15;
+  if(st.count){
+    const beats = Math.max(2, Math.round(st.measures[st.s].d*4)), q = 60/st.bpm;
+    for(let k=0;k<beats;k++) click(start+k*q, k===0);
+    start += beats*q;
+  }
+  st.playing=true; setPlayUI(); queue=[];
+  let cycle = start, idx = 0;
+  const cycleLen = (t1-t0)*spw;
+  timer = setInterval(()=>{
+    const horizon = ctx.currentTime + 0.2;
+    while(true){
+      if(idx>=list.length){
+        if(!st.loop){ if(ctx.currentTime > cycle+cycleLen) { stop(); } return; }
+        cycle += cycleLen; idx = 0; if(!list.length) return; continue;
+      }
+      const e=list[idx], when = cycle + (e.t-t0)*spw;
+      if(when > horizon) break;
+      const dur = Math.max(0.05, e.len*spw*0.95);
+      tone(e.midi, when, dur, e.hand==='l'?0.8:1);
+      queue.push({ when, on:true, e }, { when:when+dur, on:false, e });
+      idx++;
+    }
+  }, 30);
+  const tick=()=>{
+    const now=ctx.currentTime; queue.sort((a,b)=>a.when-b.when);
+    while(queue.length && queue[0].when<=now){ const q=queue.shift(); light(q.e,q.on); }
+    raf=requestAnimationFrame(tick);
+  };
+  raf=requestAnimationFrame(tick);
+}
+function light(e,on){
+  for(const n of e.notes){
+    const g=svgOf(n); if(!g) continue;
+    const cls = e.hand==='r'?'hl-r':'hl-l';
+    if(on){ g.classList.add(cls); lit.add(g);
+      if(n===e.notes[0]) follow(g);
+    } else g.classList.remove(cls);
+  }
+}
+let lastFollow=0;
+function follow(g){
+  const t=performance.now(); if(t-lastFollow<400) return; lastFollow=t;
+  const r=g.getBoundingClientRect(), dockH=document.querySelector('.dock').offsetHeight;
+  if(r.bottom > innerHeight-dockH-20 || r.top < 60) window.scrollBy({ top: r.top - innerHeight*0.3, behavior: 'smooth' });
+}
+function clearLit(){ lit.forEach(g=>g.classList.remove('hl-r','hl-l')); lit.clear(); }
+function stop(){
+  clearInterval(timer); cancelAnimationFrame(raf); timer=null; queue=[];
+  if(ctx && st.playing){ master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(0.0001,ctx.currentTime,0.02);
+    const m=master; setTimeout(()=>{ m.disconnect(); },200);
+    const comp=ctx.createDynamicsCompressor(); comp.threshold.value=-18; comp.ratio.value=4;
+    master=ctx.createGain(); master.gain.value=0.5; master.connect(comp); comp.connect(ctx.destination); }
+  st.playing=false; clearLit(); setPlayUI();
+}
+function setPlayUI(){
+  $('play').classList.toggle('on',st.playing); $('play').setAttribute('aria-label',st.playing?'とめる':'さいせい');
+  $('playIcon').innerHTML = st.playing ? '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>' : '<path d="M7 4l13 8-13 8z" fill="currentColor"/>';
+}
+
+/* ---------- controls ---------- */
+function setBpm(v){ st.bpm=Math.max(30,Math.min(180,Math.round(v))); $('tempo').value=st.bpm; $('tOut').value=st.bpm; $('tOut').textContent=st.bpm; }
+function restartIfPlaying(){ if(st.playing){ stop(); play(); } }
+function saveBpm(){ if(st.curId) dbGet(st.curId).then(r=>{ if(r){ r.bpm=st.bpm; dbPut(r); } }); }
+$('play').onclick=()=> st.playing ? stop() : play();
+$('tempo').oninput=e=>setBpm(+e.target.value);
+$('tempo').onchange=()=>{ restartIfPlaying(); saveBpm(); };
+$('tDown').onclick=()=>{ setBpm(st.bpm-5); restartIfPlaying(); saveBpm(); };
+$('tUp').onclick=()=>{ setBpm(st.bpm+5); restartIfPlaying(); saveBpm(); };
+$('hands').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; st.hand=b.dataset.h;
+  [...$('hands').children].forEach(x=>x.setAttribute('aria-pressed', x===b)); restartIfPlaying(); };
+$('loopBtn').onclick=()=>{ st.loop=!st.loop; if(st.loop && st.e<st.s) st.e=st.s; st.tapNext='s'; updLoop(); restartIfPlaying(); };
+$('countBtn').onclick=()=>{ st.count=!st.count; $('countBtn').setAttribute('aria-pressed',st.count); $('countBtn').textContent=st.count?'あり':'なし'; };
+const bump=(k,d)=>()=>{ const was=st.playing; if(was) stop(); const n=st.nMeasures-1;
+  if(k==='s'){ st.s=Math.max(0,Math.min(n,st.s+d)); if(st.e<st.s) st.e=st.s; } else { st.e=Math.max(0,Math.min(n,st.e+d)); if(st.e<st.s) st.s=st.e; }
+  updLoop(); if(was) play(); };
+$('sDown').onclick=bump('s',-1); $('sUp').onclick=bump('s',1); $('eDown').onclick=bump('e',-1); $('eUp').onclick=bump('e',1);
+function updLoop(){
+  $('loopBtn').setAttribute('aria-pressed',st.loop); $('loopBtn').textContent=st.loop?'オン':'オフ';
+  $('sOut').textContent=st.s+1; $('eOut').textContent=(st.loop?st.e:st.nMeasures-1)+1;
+  ['eDown','eUp'].forEach(id=>$(id).disabled=!st.loop);
+  $('hint').textContent = st.loop
+    ? (st.tapNext==='e' ? `${st.s+1}小節目からスタート。おわりの小節をタップしてください。` : `${st.s+1}〜${st.e+1}小節目をくりかえします。小節をタップすると、えらびなおせます。`)
+    : '楽譜の小節をタップすると、そこから再生します。「くりかえし」をオンにすると、タップで範囲をえらべます。';
+  drawOverlay();
+}
+$('bigger').onclick=()=>{ st.zoom=Math.min(2,st.zoom+0.15); rerender(); };
+$('smaller').onclick=()=>{ st.zoom=Math.max(0.5,st.zoom-0.15); rerender(); };
+let rt=0, lastW=innerWidth; addEventListener('resize',()=>{ if(innerWidth===lastW) return; lastW=innerWidth; clearTimeout(rt); rt=setTimeout(()=>{ const was=st.playing; stop(); rerender(); },250); });
+
+/* ---------- file + library (IndexedDB, this device only) ---------- */
+let dbp=null;
+function db(){ if(dbp) return dbp; dbp=new Promise((res,rej)=>{ try{ const r=indexedDB.open('gakufu',1); r.onupgradeneeded=()=>r.result.createObjectStore('scores',{keyPath:'id'}); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);}catch(e){rej(e);} }); return dbp; }
+function tx(mode,fn){ return db().then(d=>new Promise((res,rej)=>{ const t=d.transaction('scores',mode), s=t.objectStore('scores'); const r=fn(s); t.oncomplete=()=>res(r&&r.result); t.onerror=()=>rej(t.error); })).catch(()=>null); }
+const dbPut=rec=>tx('readwrite',s=>s.put(rec)), dbGet=id=>tx('readonly',s=>s.get(id)), dbDel=id=>tx('readwrite',s=>s.delete(id)), dbAll=()=>tx('readonly',s=>s.getAll());
+async function renderLib(){
+  const all=(await dbAll())||[]; all.sort((a,b)=>b.added-a.added);
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  $('libList').innerHTML = `<li class="${st.curId?'':'cur'}"><button data-id="">きらきら星（サンプル）</button></li>` +
+    all.map(r=>`<li class="${r.id===st.curId?'cur':''}"><button data-id="${esc(r.id)}">${esc(r.name)}</button><button class="del" data-del="${esc(r.id)}" aria-label="${esc(r.name)}を消す">×</button></li>`).join('');
+}
+$('libList').onclick=async e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.del!==undefined){
+    if(b.dataset.confirm){ await dbDel(b.dataset.del); if(st.curId===b.dataset.del) loadScore(SAMPLE,'きらきら星'); else renderLib(); }
+    else { b.dataset.confirm='1'; b.textContent='消す？'; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.confirm; b.textContent='×'; } },3000); }
+    return;
+  }
+  $('msg').hidden=true;
+  const id=b.dataset.id; if(!id) return loadScore(SAMPLE,'きらきら星');
+  const r=await dbGet(id); if(r) loadScore(r.xml, r.name, r.id);
+};
+const isImage=f=>/^image\//.test(f.type)||/\.(jpe?g|png|heic|heif|gif|webp|bmp|tiff?|pdf)$/i.test(f.name);
+const readAs=(f,how)=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r[how](f); });
+async function fileToXml(f){
+  if(/\.mxl$/i.test(f.name)){
+    const zip=await JSZip.loadAsync(await readAs(f,'readAsArrayBuffer'));
+    let path=null; const cont=zip.file('META-INF/container.xml');
+    if(cont){ const m=(await cont.async('string')).match(/full-path="([^"]+)"/); if(m) path=m[1]; }
+    if(!path) path=Object.keys(zip.files).find(k=>!k.startsWith('META-INF')&&/\.(xml|musicxml)$/i.test(k));
+    if(!path||!zip.file(path)) throw new Error('mxlの中に楽譜が見つかりません');
+    return zip.file(path).async('string');
+  }
+  return readAs(f,'readAsText');
+}
+/* つなげる：2つ目以降のファイルの小節を、1つ目のパートの後ろに順に追加する */
+function mergeScores(xmls){
+  const P=new DOMParser(), base=P.parseFromString(xmls[0],'application/xml');
+  const bParts=[...base.getElementsByTagName('part')].filter(x=>x.parentNode.nodeName==='score-partwise');
+  const kids=(el,tag)=>[...el.children].filter(c=>c.nodeName===tag);
+  let n=kids(bParts[0],'measure').length;
+  for(const x of xmls.slice(1)){
+    const d=P.parseFromString(x,'application/xml');
+    const parts=[...d.getElementsByTagName('part')].filter(e=>e.parentNode.nodeName==='score-partwise');
+    if(parts.length!==bParts.length) throw new Error('parts');
+    let add=0;
+    parts.forEach((pt,pi)=>{ const ms=kids(pt,'measure'); add=Math.max(add,ms.length);
+      ms.forEach((m,k)=>{ const c=base.importNode(m,true); c.setAttribute('number',n+k+1); c.removeAttribute('implicit');
+        c.querySelectorAll('print').forEach(e=>e.remove()); bParts[pi].appendChild(c); }); });
+    n+=add;
+  }
+  // ページの頭でくり返し書かれた調号・拍子・音部記号は、前と同じなら消す（途中で拍子が変わったように見えないように）
+  for(const pt of bParts){
+    const last={};
+    for(const m of kids(pt,'measure')) for(const a of kids(m,'attributes')){
+      for(const c of [...a.children]){
+        if(!['key','time','clef','divisions','staves'].includes(c.nodeName)) continue;
+        const k=c.nodeName+(c.getAttribute('number')||''), v=c.textContent.replace(/\s+/g,'');
+        if(last[k]===v) c.remove(); else last[k]=v;
+      }
+      if(!a.children.length) a.remove();
+    }
+  }
+  return new XMLSerializer().serializeToString(base);
+}
+function showMsg(html){ $('msg').innerHTML=html+' <button class="btn" id="msgX">とじる</button>'; $('msg').hidden=false; $('msgX').onclick=()=>{$('msg').hidden=true;}; }
+$('file').onchange=async e=>{
+  const all=[...e.target.files]; e.target.value=''; if(!all.length) return;
+  const imgs=all.filter(isImage), files=all.filter(f=>!isImage(f))
+    .sort((a,b)=>a.name.localeCompare(b.name,'ja',{numeric:true}));
+  if(!files.length){
+    showMsg(`<b>写真（画像）やPDFは、このアプリでは直接読めません。</b>先にPCのAudiverisで楽譜データ（.mxl）に変換してから開いてください。複数ページの楽譜は、Audiverisで1つのファイルにまとめるか、ページごとの .mxl をまとめて選ぶとつながって表示されます。`);
+    return;
+  }
+  let xmls=[];
+  try{ xmls=await Promise.all(files.map(fileToXml)); }
+  catch(err){ showMsg('ファイルを読めませんでした。MusicXML（.musicxml / .xml）か .mxl を選んでください。'); return; }
+  const bad=files.filter((f,i)=>!/<score-partwise[\s>]/.test(xmls[i]));
+  if(bad.length){ showMsg(`楽譜データではないファイルがありました：${bad.map(f=>f.name).join('、')}`); return; }
+  let xml;
+  try{ xml = xmls.length>1 ? mergeScores(xmls) : xmls[0]; }
+  catch(err){ showMsg('ファイルをつなげられませんでした（ページによってパートの数がちがうようです）。'); return; }
+  const base=files[0].name.replace(/\.(musicxml|xml|mxl)$/i,'');
+  const name = files.length>1 ? `${base} ほか（${files.length}ページ）` : base;
+  const id='s'+Date.now();
+  if(await loadScore(xml, name, id)){
+    await dbPut({ id, name, xml, added:Date.now() }); renderLib();
+    if(imgs.length) showMsg(`画像ファイル ${imgs.length} 枚は読みとばしました（画像は直接読めません）。`);
+    else if(files.length>1) showMsg(`${files.length} つのファイルを、ファイル名の順番でつなげました：${files.map(f=>f.name).join(' → ')}`);
+  }
+};
+
+const padDock=()=>{ document.body.style.paddingBottom=(document.querySelector('.dock').offsetHeight+24)+'px'; };
+padDock(); addEventListener('resize',padDock);
+loadScore(SAMPLE,'きらきら星');
+if('serviceWorker' in navigator){ addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+}
+</script>
+</body>
+</html>
